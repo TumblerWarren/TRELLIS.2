@@ -3,4 +3,5 @@
 -r requirements.txt
 gradio==6.1.0
 huggingface_hub
+hf-xet  # Supported Hugging Face Hub transfer backend; does not require hf_transfer.
 einops==0.8.1

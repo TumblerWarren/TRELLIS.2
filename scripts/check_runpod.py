@@ -2,6 +2,10 @@
 """Preflight Hugging Face model access and local GPU before running TRELLIS.2."""
 import os
 import sys
+from hf_download_compat import configure_hf_download_environment, explain_hub_error
+
+# Must run before importing Hugging Face Hub, Transformers or PyTorch.
+configure_hf_download_environment()
 
 def main():
     try:
@@ -37,7 +41,8 @@ def main():
             print(f"OK: {repo}/{filename}")
         except Exception as exc:
             print(f"FAILED: {repo}/{filename}: {type(exc).__name__}: {exc}")
-            print(f"  Hint: {hint}")
+            print(f"  Troubleshooting: {explain_hub_error(exc)}")
+            print(f"  Model-specific hint: {hint}")
             failed = True
     if failed:
         raise SystemExit("Model preflight failed. Correct access before launching the app.")
