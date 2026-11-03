@@ -53,12 +53,12 @@ def explain_hub_error(exc: Exception) -> str:
     if "gated" in cls.lower() or "gated repo" in message or "gatedrepo" in message:
         return (
             "The model is gated. Accept its conditions on the model page and "
-            "authenticate with a read token from the approved Hugging Face account."
+            "authenticate using browser login (bash scripts/login_huggingface.sh) or an approved HF_TOKEN secret."
         )
     if status in (401, 403) or "401 client error" in message or "403 client error" in message:
         return (
             "Unauthorized or forbidden. Check model access approval, the "
-            "active account (hf auth whoami), and HF_TOKEN permissions."
+            "active account (bash scripts/login_huggingface.sh --check), or HF_TOKEN permissions."
         )
     if status == 404 or cls in {"RepositoryNotFoundError", "EntryNotFoundError"}:
         return (
