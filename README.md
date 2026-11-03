@@ -10,6 +10,7 @@ RunPod deployment of Microsoft's [TRELLIS.2 Hugging Face Space](https://huggingf
 - Automatically download and validate forest/sunset/courtyard HDRI files through the Hugging Face Hub, instead of relying on Git LFS pointers.
 - Handle missing optional example images and missing per-session temporary directories.
 - Provide Gradio 6.1.0 dependency, RunPod launcher, Hugging Face access preflight, and automatically generated Gradio login credentials when needed.
+- Use a separate modern Hugging Face CLI for browser/device-code sign-in without upgrading the inference environment; verify/refresh OAuth credentials at launch.
 - Ignore the deprecated RunPod `HF_HUB_ENABLE_HF_TRANSFER` setting before Hub imports; use `hf-xet` instead of requiring legacy `hf_transfer`.
 - Default to 512 resolution for a conservative first run.
 
@@ -18,9 +19,10 @@ RunPod deployment of Microsoft's [TRELLIS.2 Hugging Face Space](https://huggingf
 Complete these steps **before starting TRELLIS.2 on RunPod**:
 
 - [ ] **Approve Meta DINOv3 access:** Sign in to Hugging Face and accept the model's access/license conditions at [facebook/dinov3-vitl16-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m). Wait for approval if required.
-- [ ] **Create a read token:** Create a [Hugging Face access token](https://huggingface.co/settings/tokens) from the **same account** approved for DINOv3. If using a fine-grained token, grant it read access to the gated DINOv3 repository.
-- [ ] **Authenticate RunPod:** Run `hf auth login` and `hf auth whoami`, **or** supply your token via a protected RunPod secret/environment variable named `HF_TOKEN`. Never commit or paste your token into the repository.
-- [ ] **Verify model access:** Run `hf download facebook/dinov3-vitl16-pretrain-lvd1689m config.json`, followed by `python scripts/check_runpod.py` once dependencies are installed.
+- [ ] **Sign in using your browser (recommended):** Run `bash scripts/login_huggingface.sh`. The script installs a modern CLI in an isolated environment, shows a browser URL and verification code, and saves an OAuth credential in `HF_HOME`. No manually created access token is required.
+- [ ] **Use your approved account:** Make sure the Hugging Face account used for browser sign-in is the same one approved for DINOv3. The login script verifies your identity.
+- [ ] **Verify gated-model access:** Run `python scripts/check_runpod.py` and then `bash scripts/run_runpod.sh`. The launcher checks and refreshes an existing browser session before model loading.
+- [ ] **Unattended Pod alternative:** Store a read `HF_TOKEN` as a RunPod secret if interactive browser login is inappropriate. `HF_TOKEN` overrides browser credentials. Run `unset HF_TOKEN` in your current terminal before switching methods.
 
 The main [Microsoft TRELLIS.2-4B](https://huggingface.co/microsoft/TRELLIS.2-4B) weights and default [ZhengPeng7/BiRefNet](https://huggingface.co/ZhengPeng7/BiRefNet) background remover are public; **no separate approval is normally required** for them. [BRIA RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0) is **optional** and has separate access and licensing conditions. A token cannot bypass model-owner approval; Hugging Face PRO is not required merely to download models your account is allowed to access.
 
@@ -39,7 +41,7 @@ python -m pip install -U pip
 python -m pip install -r requirements-runpod.txt
 
 # Accept the DINOv3 model terms on Hugging Face first.
-hf auth login
+bash scripts/login_huggingface.sh
 python scripts/check_runpod.py
 bash scripts/run_runpod.sh
 ```

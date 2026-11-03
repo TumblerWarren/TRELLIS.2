@@ -11,21 +11,48 @@ This fork is intended for Linux-based RunPod pods with **RTX 4090 24 GB**, **Pyt
 | [ZhengPeng7/BiRefNet](https://huggingface.co/ZhengPeng7/BiRefNet) | Public (MIT metadata) | Default local background remover |
 | [briaai/RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0) | **Gated** and noncommercial by default; separate commercial licensing | Optional, only when `TRELLIS_REMBG_MODEL=briaai/RMBG-2.0` |
 
-The default fork **does not use** remote ZeroGPU inference. Hugging Face PRO is not required for approved model downloads. An HF read token must belong to the account granted DINOv3 access.
+The default fork **does not use** remote ZeroGPU inference. Hugging Face PRO is not required for approved model downloads.
 
-From your RunPod terminal:
+### Recommended: browser/device-code sign-in (no manual token creation)
+
+Before starting, accept Meta's DINOv3 model conditions at [facebook/dinov3-vitl16-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m) using the Hugging Face account that will run the application.
+
+After installing the RunPod dependencies, run the following inside your Pod:
 
 ```bash
-cd /workspace/TRELLIS.2   # use the actual clone path
+cd /TRELLIS.2  # or your own cloned project path
 source env/bin/activate
-hf auth login
-hf auth whoami
-hf download facebook/dinov3-vitl16-pretrain-lvd1689m config.json
+unset HF_TOKEN  # only needed if a previous HF_TOKEN was set
+
+bash scripts/login_huggingface.sh
+python scripts/check_runpod.py
+bash scripts/run_runpod.sh
 ```
 
-If `hf auth login` is unavailable: `python -m pip install -U huggingface_hub`.
+The login command creates a **separate Python virtual environment** (by default `$HOME/.local/share/trellis2/hf-auth-cli`) for a modern Hugging Face CLI. It does **not** upgrade the older `huggingface_hub` dependency inside TRELLIS.2's pinned Transformers environment.
 
-For unattended RunPod deployments use a **RunPod secret** named `HF_TOKEN` with read access to the gated model. Do not put the token in Git, Gradio, screenshots, or notebook logs. The token permits downloads; it does **not** replace acceptance of Meta's model terms.
+Choose **Log in with your browser**. Open the URL printed in your terminal on your own computer, enter the short code, and approve. This is Hugging Face's device-code OAuth flow. You no longer need to create and paste a token manually, although an OAuth access/refresh credential is saved locally under `HF_HOME` (default `$HOME/.cache/huggingface`).
+
+On every RunPod launch, `scripts/run_runpod.sh` detects the separate CLI and invokes `hf auth whoami` to verify and, where needed, refresh the browser-login credential *before* the older Python runtime accesses gated models. If the session expires or is revoked, run `bash scripts/login_huggingface.sh` again.
+
+Both CLI and runtime must use **the same Linux user and `HF_HOME` path**. For a persistent model/credential cache, configure `HF_HOME` *before* logging in, and use the same setting on every subsequent launch:
+
+```bash
+export HF_HOME=/workspace/hf-cache
+bash scripts/login_huggingface.sh
+```
+
+You can check the login again without interactive prompts or package installation:
+
+```bash
+bash scripts/login_huggingface.sh --check
+```
+
+Protect `HF_HOME`: it contains credentials. Browser login does not bypass DINOv3 approval. Device-code login also requires outbound network access; an offline Pod cannot perform it.
+
+### Alternative: read token for unattended automation
+
+Unattended pods may instead provide a protected RunPod secret called `HF_TOKEN`, belonging to the **same account approved for DINOv3**. `HF_TOKEN` takes precedence over saved browser credentials; the browser script warns and refuses to run while it is set, rather than silently using the wrong identity. Do not commit either kind of credential to GitHub or expose it in Gradio.
 
 ## 2. Installation
 
@@ -36,6 +63,8 @@ python3.12 -m venv env
 source env/bin/activate
 python -m pip install -U pip
 python -m pip install -r requirements-runpod.txt
+# Browser sign-in (requires accepting Meta's DINOv3 conditions first):
+bash scripts/login_huggingface.sh
 python scripts/check_runpod.py
 ```
 
@@ -152,8 +181,10 @@ Only enable high-performance mode if your RunPod Pod has sufficient bandwidth, C
 
 ## 5. Troubleshooting
 
-- **401 / GatedRepoError for DINOv3:** accept model terms in your Hugging Face account and login with a read token from that same account.
+- **401 / GatedRepoError for DINOv3:** accept Meta's terms on the model page using your chosen Hugging Face account; run `bash scripts/login_huggingface.sh` and `bash scripts/login_huggingface.sh --check`. If using `HF_TOKEN` for automation, ensure it belongs to the approved account.
 - **401 / GatedRepoError for BRIA:** use default public `ZhengPeng7/BiRefNet`; opting into BRIA requires separately accepting BRIA terms. BRIA noncommercial licensing is not automatically suitable for commercial services.
+- **Browser login isn't offered by `hf auth login`:** your original Python environment has an older CLI. Use `bash scripts/login_huggingface.sh`, which installs a modern CLI separately. Do not upgrade TRELLIS.2's pinned inference dependencies just to get browser login.
+- **Browser login succeeds, but preflight fails with 401:** confirm your approved account, `HF_HOME`, and whether `HF_TOKEN` is overriding the saved browser session. For an expired OAuth session, rerun the browser login script.
 - **ZeroGPU quota error:** should not occur in this fork; search for leftover remote `rmbg_client` if it does.
 - **DINOv3 `layer` error:** fixed in `trellis2/modules/image_feature_extractor.py`.
 - **`forest.exr` invalid / 131-byte text pointer:** restart; the app fetches and validates required HDRI images from Microsoft Space. Confirm `HF_TOKEN` if download fails.
