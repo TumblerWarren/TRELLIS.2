@@ -30,7 +30,7 @@ def main():
         ("microsoft/TRELLIS.2-4B", "pipeline.json",
          "Main model is public; check network access."),
         ("facebook/dinov3-vitl16-pretrain-lvd1689m", "config.json",
-         "Accept Meta's gated model terms and authenticate with hf auth login or HF_TOKEN."),
+         "Accept Meta's DINOv3 terms, then run bash scripts/login_huggingface.sh (browser sign-in) or use an approved HF_TOKEN secret."),
         (rembg, "config.json",
          "Check background-model access and license; the default ZhengPeng7/BiRefNet is public."),
     ]
