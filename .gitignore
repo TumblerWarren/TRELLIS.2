@@ -215,3 +215,9 @@ tmp/
 *.pth 
 assets/example_image/ 
 assets/hdri/ 
+
+# RunPod caches and local inference outputs
+hf-cache/
+.huggingface/
+.gradio/
+*.glb

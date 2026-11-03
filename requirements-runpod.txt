@@ -1,0 +1,6 @@
+# RunPod additions to the Hugging Face Space's pinned CUDA stack.
+# Note: upstream prebuilt extension wheels may not support RTX 4090's sm_89 architecture.
+-r requirements.txt
+gradio==6.1.0
+huggingface_hub
+einops==0.8.1
