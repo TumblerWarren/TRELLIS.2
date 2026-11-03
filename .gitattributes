@@ -1,0 +1,4 @@
+* text=auto 
+*.exr -text 
+*.png -text 
+*.webp -text 
