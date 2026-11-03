@@ -1,6 +1,4 @@
 import gradio as gr
-from gradio_client import Client, handle_file
-import spaces
 
 import os
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = '1'
@@ -17,11 +15,15 @@ import numpy as np
 from PIL import Image
 import base64
 import io
-import tempfile
+from pathlib import Path
+from huggingface_hub import hf_hub_download
 from trellis2.modules.sparse import SparseTensor
 from trellis2.pipelines import Trellis2ImageTo3DPipeline
 from trellis2.renderers import EnvMap
 from trellis2.utils import render_utils
+
+APP_DIR = Path(__file__).resolve().parent
+os.chdir(APP_DIR)
 import o_voxel
 
 
@@ -311,16 +313,39 @@ def start_session(req: gr.Request):
     
 def end_session(req: gr.Request):
     user_dir = os.path.join(TMP_DIR, str(req.session_hash))
-    shutil.rmtree(user_dir)
+    shutil.rmtree(user_dir, ignore_errors=True)
     
 
+def ensure_hdri_assets() -> None:
+    """Download required HDRI maps if this checkout contains no LFS binaries."""
+    for name in ("forest", "sunset", "courtyard"):
+        relative = f"assets/hdri/{name}.exr"
+        destination = APP_DIR / relative
+        needs_download = not destination.is_file()
+        if not needs_download:
+            with destination.open("rb") as stream:
+                header = stream.read(64)
+            needs_download = destination.stat().st_size < 1024 or header.startswith(
+                b"version https://git-lfs.github.com/spec/v1"
+            )
+        if needs_download:
+            print(f"Downloading HDRI asset: {relative}", flush=True)
+            hf_hub_download(
+                repo_id="microsoft/TRELLIS.2",
+                repo_type="space",
+                filename=relative,
+                local_dir=str(APP_DIR),
+                force_download=True,
+            )
+        if cv2.imread(str(destination), cv2.IMREAD_UNCHANGED) is None:
+            raise RuntimeError(
+                f"Invalid HDRI file {destination}. Delete it and restart to download again."
+            )
+
+
 def remove_background(input: Image.Image) -> Image.Image:
-    with tempfile.NamedTemporaryFile(suffix='.png') as f:
-        input = input.convert('RGB')
-        input.save(f.name)
-        output = rmbg_client.predict(handle_file(f.name), api_name="/image")[0][0]
-        output = Image.open(output)
-        return output
+    """Run locally on the selected BiRefNet model, without remote ZeroGPU calls."""
+    return local_rmbg(input.convert("RGB"))
 
 
 def preprocess_image(input: Image.Image) -> Image.Image:
@@ -344,6 +369,8 @@ def preprocess_image(input: Image.Image) -> Image.Image:
     output_np = np.array(output)
     alpha = output_np[:, :, 3]
     bbox = np.argwhere(alpha > 0.8 * 255)
+    if bbox.size == 0:
+        raise gr.Error("No foreground was detected in the uploaded image. Try a clearer image.")
     bbox = np.min(bbox[:, 1]), np.min(bbox[:, 0]), np.max(bbox[:, 1]), np.max(bbox[:, 0])
     center = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
     size = max(bbox[2] - bbox[0], bbox[3] - bbox[1])
@@ -382,7 +409,6 @@ def get_seed(randomize_seed: bool, seed: int) -> int:
     return np.random.randint(0, MAX_SEED) if randomize_seed else seed
 
 
-@spaces.GPU(duration=120)
 def image_to_3d(
     image: Image.Image,
     seed: int,
@@ -504,7 +530,6 @@ def image_to_3d(
     return state, full_html
 
 
-@spaces.GPU(duration=120)
 def extract_glb(
     state: dict,
     decimation_target: int,
@@ -551,20 +576,21 @@ def extract_glb(
     return glb_path, glb_path
 
 
+os.makedirs("assets/example_image", exist_ok=True)
+
 with gr.Blocks(delete_cache=(600, 600)) as demo:
     gr.Markdown("""
     ## Image to 3D Asset with [TRELLIS.2](https://microsoft.github.io/TRELLIS.2)
     * Upload an image (preferably with an alpha-masked foreground object) and click Generate to create a 3D asset.
     * Click Extract GLB to export and download the generated GLB file if you're satisfied with the result. Otherwise, try another time.
-    * *Note: Uploaded images are temporarily cached on Hugging Face server and permanently deleted after session ends.
-       Microsoft does not access or retain any user data. Users are advised against uploading data containing sensitive or private information.*
+    * *Self-hosted RunPod: uploaded files and temporary outputs are processed on your pod. Secure public access and manage the pod storage accordingly.*
     """)
     
     with gr.Row():
         with gr.Column(scale=1, min_width=360):
             image_prompt = gr.Image(label="Image Prompt", format="png", image_mode="RGBA", type="pil", sources=["upload", "clipboard"], height=400)
             
-            resolution = gr.Radio(["512", "1024", "1536"], label="Resolution", value="1024")
+            resolution = gr.Radio(["512", "1024", "1536"], label="Resolution", value="512")
             seed = gr.Slider(0, MAX_SEED, label="Seed", value=0, step=1)
             randomize_seed = gr.Checkbox(label="Randomize Seed", value=True)
             decimation_target = gr.Slider(100000, 500000, label="Decimation Target", value=300000, step=10000)
@@ -603,17 +629,20 @@ with gr.Blocks(delete_cache=(600, 600)) as demo:
             gr.Markdown("*We are actively working on improving the speed of GLB extraction. Currently, it may take half a minute or more and face count is limited.*")
                     
         with gr.Column(scale=1, min_width=172):
-            examples = gr.Examples(
-                examples=[
-                    f'assets/example_image/{image}'
-                    for image in os.listdir("assets/example_image")
-                ],
-                inputs=[image_prompt],
-                fn=preprocess_image,
-                outputs=[image_prompt],
-                run_on_click=True,
-                examples_per_page=18,
-            )
+            example_images = [
+                f"assets/example_image/{image}"
+                for image in sorted(os.listdir("assets/example_image"))
+                if image.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+            ]
+            if example_images:
+                gr.Examples(
+                    examples=example_images,
+                    inputs=[image_prompt],
+                    fn=preprocess_image,
+                    outputs=[image_prompt],
+                    run_on_click=True,
+                    examples_per_page=18,
+                )
                     
     output_buf = gr.State()
     
@@ -664,8 +693,14 @@ if __name__ == "__main__":
         icon = Image.open(MODES[i]['icon'])
         MODES[i]['icon_base64'] = image_to_base64(icon)
 
-    rmbg_client = Client("briaai/BRIA-RMBG-2.0")
-    pipeline = Trellis2ImageTo3DPipeline.from_pretrained('microsoft/TRELLIS.2-4B')
+    ensure_hdri_assets()
+    pipeline = Trellis2ImageTo3DPipeline.from_pretrained(
+        "microsoft/TRELLIS.2-4B",
+        rembg_model_name=os.getenv("TRELLIS_REMBG_MODEL", "ZhengPeng7/BiRefNet"),
+    )
+    # Keep the background-removal model on CPU, reserving GPU VRAM for TRELLIS.2.
+    local_rmbg = pipeline.rembg_model
+    local_rmbg.cpu()
     pipeline.rembg_model = None
     pipeline.low_vram = False
     pipeline.cuda()
@@ -685,4 +720,15 @@ if __name__ == "__main__":
         )),
     }
     
-    demo.launch(css=css, head=head)
+    auth_user = os.getenv("GRADIO_AUTH_USER")
+    auth_password = os.getenv("GRADIO_AUTH_PASSWORD")
+    if bool(auth_user) != bool(auth_password):
+        raise RuntimeError("Set both GRADIO_AUTH_USER and GRADIO_AUTH_PASSWORD, or neither.")
+    demo.launch(
+        css=css,
+        head=head,
+        server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
+        server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+        share=os.getenv("GRADIO_SHARE", "false").lower() in ("1", "true", "yes"),
+        auth=(auth_user, auth_password) if auth_user else None,
+    )

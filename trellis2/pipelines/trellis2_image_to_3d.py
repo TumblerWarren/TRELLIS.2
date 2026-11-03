@@ -68,7 +68,7 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         self._device = 'cpu'
 
     @staticmethod
-    def from_pretrained(path: str) -> "Trellis2ImageTo3DPipeline":
+    def from_pretrained(path: str, rembg_model_name: str | None = None) -> "Trellis2ImageTo3DPipeline":
         """
         Load a pretrained model.
 
@@ -93,7 +93,10 @@ class Trellis2ImageTo3DPipeline(Pipeline):
         new_pipeline.tex_slat_normalization = args['tex_slat_normalization']
 
         new_pipeline.image_cond_model = getattr(image_feature_extractor, args['image_cond_model']['name'])(**args['image_cond_model']['args'])
-        new_pipeline.rembg_model = getattr(rembg, args['rembg_model']['name'])(**args['rembg_model']['args'])
+        rembg_args = dict(args['rembg_model']['args'])
+        if rembg_model_name is not None:
+            rembg_args['model_name'] = rembg_model_name
+        new_pipeline.rembg_model = getattr(rembg, args['rembg_model']['name'])(**rembg_args)
         
         new_pipeline.low_vram = args.get('low_vram', True)
         new_pipeline.default_pipeline_type = args.get('default_pipeline_type', '1024_cascade')
