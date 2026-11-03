@@ -10,6 +10,7 @@ RunPod deployment of Microsoft's [TRELLIS.2 Hugging Face Space](https://huggingf
 - Automatically download and validate forest/sunset/courtyard HDRI files through the Hugging Face Hub, instead of relying on Git LFS pointers.
 - Handle missing optional example images and missing per-session temporary directories.
 - Provide Gradio 6.1.0 dependency, RunPod launcher, Hugging Face access preflight, and optional Gradio basic authentication.
+- Ignore the deprecated RunPod `HF_HUB_ENABLE_HF_TRANSFER` setting before Hub imports; use `hf-xet` instead of requiring legacy `hf_transfer`.
 - Default to 512 resolution for a conservative first run.
 
 ## Model access checklist

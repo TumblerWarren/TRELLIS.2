@@ -1,3 +1,7 @@
+# Normalize inherited RunPod/Hugging Face download flags BEFORE importing Gradio.
+from scripts.hf_download_compat import configure_hf_download_environment
+configure_hf_download_environment()
+
 import gradio as gr
 
 import os

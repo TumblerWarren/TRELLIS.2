@@ -78,7 +78,32 @@ Then open `http://localhost:7860` on the forwarding computer.
 
 Optional temporary Gradio share link: `export GRADIO_SHARE=true`. Anyone who can access an unprotected link can consume GPU time. For long-running/public use, prefer RunPod proxy or an authenticated **named** Cloudflare Tunnel instead of an unauthenticated share link.
 
-## 4. Troubleshooting
+## 4. Download backend compatibility (automatic)
+
+Some RunPod images export `HF_HUB_ENABLE_HF_TRANSFER=1` even though the optional `hf_transfer` package is not installed. With older `huggingface_hub` releases this can cause **every** model preflight to fail before authentication is even checked:
+
+```text
+ValueError: Fast download using 'hf_transfer' is enabled
+but 'hf_transfer' package is not available
+```
+
+This fork **automatically removes the deprecated variable before importing Hugging Face libraries**, in all supported launch paths:
+
+- `scripts/check_runpod.py` clears it before checking Hugging Face access.
+- `scripts/run_runpod.sh` clears it in the shell for both the preflight and the app.
+- Direct `python app.py` clears it before importing Gradio and the model pipeline.
+
+This is deliberate **even if `hf_transfer` happens to be installed**, because newer Hub versions no longer support the legacy backend. The fix works whether the setting is absent, `0`, `1`, `true`, or another value. It does **not** change `HF_TOKEN`, `HF_HOME`, `HF_HUB_OFFLINE`, `HF_HUB_DISABLE_XET`, or proxy settings.
+
+The supported `hf-xet` downloader is installed through `requirements-runpod.txt` and selected automatically by compatible Hub versions. To optionally utilize more bandwidth/CPU during model downloads, set:
+
+```bash
+export HF_XET_HIGH_PERFORMANCE=1
+```
+
+Only enable high-performance mode if your RunPod Pod has sufficient bandwidth, CPU, and disk throughput. If Xet is disabled or unavailable, compatible Hub versions may use standard downloads. Authentication failures (401/403) and gated-model approval remain separate issues and **are never bypassed**.
+
+## 5. Troubleshooting
 
 - **401 / GatedRepoError for DINOv3:** accept model terms in your Hugging Face account and login with a read token from that same account.
 - **401 / GatedRepoError for BRIA:** use default public `ZhengPeng7/BiRefNet`; opting into BRIA requires separately accepting BRIA terms. BRIA noncommercial licensing is not automatically suitable for commercial services.
