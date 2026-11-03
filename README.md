@@ -12,6 +12,19 @@ RunPod deployment of Microsoft's [TRELLIS.2 Hugging Face Space](https://huggingf
 - Provide Gradio 6.1.0 dependency, RunPod launcher, Hugging Face access preflight, and optional Gradio basic authentication.
 - Default to 512 resolution for a conservative first run.
 
+## Model access checklist
+
+Complete these steps **before starting TRELLIS.2 on RunPod**:
+
+- [ ] **Approve Meta DINOv3 access:** Sign in to Hugging Face and accept the model's access/license conditions at [facebook/dinov3-vitl16-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m). Wait for approval if required.
+- [ ] **Create a read token:** Create a [Hugging Face access token](https://huggingface.co/settings/tokens) from the **same account** approved for DINOv3. If using a fine-grained token, grant it read access to the gated DINOv3 repository.
+- [ ] **Authenticate RunPod:** Run `hf auth login` and `hf auth whoami`, **or** supply your token via a protected RunPod secret/environment variable named `HF_TOKEN`. Never commit or paste your token into the repository.
+- [ ] **Verify model access:** Run `hf download facebook/dinov3-vitl16-pretrain-lvd1689m config.json`, followed by `python scripts/check_runpod.py` once dependencies are installed.
+
+The main [Microsoft TRELLIS.2-4B](https://huggingface.co/microsoft/TRELLIS.2-4B) weights and default [ZhengPeng7/BiRefNet](https://huggingface.co/ZhengPeng7/BiRefNet) background remover are public; **no separate approval is normally required** for them. [BRIA RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0) is **optional** and has separate access and licensing conditions. A token cannot bypass model-owner approval; Hugging Face PRO is not required merely to download models your account is allowed to access.
+
+For full instructions, see [RunPod model permissions](README_RUNPOD.md#1-hugging-face-permissions-do-this-before-starting-the-app).
+
 ## Quick start on RunPod
 
 Python **3.12**, Linux, a working NVIDIA CUDA environment, and an internet-enabled 24 GB GPU are needed.
