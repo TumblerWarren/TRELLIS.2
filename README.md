@@ -9,7 +9,7 @@ RunPod deployment of Microsoft's [TRELLIS.2 Hugging Face Space](https://huggingf
 - Compatibility with alternate DINOv3 Transformers layer layouts.
 - Automatically download and validate forest/sunset/courtyard HDRI files through the Hugging Face Hub, instead of relying on Git LFS pointers.
 - Handle missing optional example images and missing per-session temporary directories.
-- Provide Gradio 6.1.0 dependency, RunPod launcher, Hugging Face access preflight, and optional Gradio basic authentication.
+- Provide Gradio 6.1.0 dependency, RunPod launcher, Hugging Face access preflight, and automatically generated Gradio login credentials when needed.
 - Ignore the deprecated RunPod `HF_HUB_ENABLE_HF_TRANSFER` setting before Hub imports; use `hf-xet` instead of requiring legacy `hf_transfer`.
 - Default to 512 resolution for a conservative first run.
 
@@ -44,7 +44,9 @@ python scripts/check_runpod.py
 bash scripts/run_runpod.sh
 ```
 
-Open `https://<POD-ID>-7860.proxy.runpod.net` **only if port 7860 is exposed in RunPod**. For a private alternative, use SSH forwarding. Secure any publicly accessible interface.
+After model loading, the app **attempts to print a temporary `https://*.gradio.live` link by default**, protected by a randomly generated username/password displayed in the RunPod terminal unless you supply your own. The public URL is only created if Gradio's outbound tunnel succeeds. Set `GRADIO_SHARE=false` to disable this link. RunPod also offers `https://<POD-ID>-7860.proxy.runpod.net` **when port 7860 is exposed**; it does not depend on Gradio sharing. For private access, use SSH forwarding.
+
+If you provide no credentials, both public sharing and non-loopback binding use a generated password. See [README_RUNPOD.md](README_RUNPOD.md#3-start-the-service-and-get-a-public-url).
 
 For detailed model access, license notes, troubleshooting, and CUDA wheel caveats see [README_RUNPOD.md](README_RUNPOD.md).
 
