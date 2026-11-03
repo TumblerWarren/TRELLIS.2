@@ -23,7 +23,7 @@ class RunPodSourceTests(unittest.TestCase):
         self.assertNotIn("spaces.GPU", app)
         self.assertIn("local_rmbg", app)
         self.assertIn("ensure_hdri_assets()", app)
-        self.assertIn("GRADIO_AUTH_PASSWORD", app)
+        self.assertIn("resolve_gradio_access()", app)
 
     def test_feature_extractor_accepts_nested_encoder(self):
         source = (ROOT / "trellis2/modules/image_feature_extractor.py").read_text()

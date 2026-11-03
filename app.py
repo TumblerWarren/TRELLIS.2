@@ -1,5 +1,6 @@
 # Normalize inherited RunPod/Hugging Face download flags BEFORE importing Gradio.
 from scripts.hf_download_compat import configure_hf_download_environment
+from scripts.public_access import resolve_gradio_access, explain_gradio_access
 configure_hf_download_environment()
 
 import gradio as gr
@@ -724,15 +725,16 @@ if __name__ == "__main__":
         )),
     }
     
-    auth_user = os.getenv("GRADIO_AUTH_USER")
-    auth_password = os.getenv("GRADIO_AUTH_PASSWORD")
-    if bool(auth_user) != bool(auth_password):
-        raise RuntimeError("Set both GRADIO_AUTH_USER and GRADIO_AUTH_PASSWORD, or neither.")
+    # Temporary public links are enabled for self-hosted quickstarts. Protect
+    # the GPU with Gradio credentials, generated if the operator omitted them.
+    # A public URL is only available if Gradio's outbound share tunnel connects.
+    access = resolve_gradio_access()
+    explain_gradio_access(access)
     demo.launch(
         css=css,
         head=head,
-        server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
-        server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
-        share=os.getenv("GRADIO_SHARE", "false").lower() in ("1", "true", "yes"),
-        auth=(auth_user, auth_password) if auth_user else None,
+        server_name=access.server_name,
+        server_port=access.server_port,
+        share=access.share,
+        auth=access.auth,
     )

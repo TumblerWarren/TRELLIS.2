@@ -14,5 +14,11 @@ fi
 export OPENCV_IO_ENABLE_OPENEXR=1
 export GRADIO_SERVER_NAME="${GRADIO_SERVER_NAME:-0.0.0.0}"
 export GRADIO_SERVER_PORT="${GRADIO_SERVER_PORT:-7860}"
+# Request a temporary gradio.live link for first-time self-hosted RunPod use.
+# The Python app protects it with randomly generated auth unless credentials
+# were supplied or authentication was explicitly disabled.
+export GRADIO_SHARE="${GRADIO_SHARE:-true}"
+echo "[TRELLIS.2] GRADIO_SHARE=${GRADIO_SHARE}; temporary public URLs require working outbound connectivity." >&2
+echo "[TRELLIS.2] RunPod alternative: expose HTTP port ${GRADIO_SERVER_PORT} in your Pod template/Connect settings." >&2
 python scripts/check_runpod.py
 exec python app.py

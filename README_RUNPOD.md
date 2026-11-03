@@ -49,34 +49,81 @@ export HF_HOME=/workspace/hf-cache
 
 The first launch downloads weights (including the DINOv3 gated weights) and three small HDRI assets. The repository intentionally does **not** commit model weights, Hugging Face credentials, or Git LFS pointer files.
 
-## 3. Start the service
+## 3. Start the service and get a public URL
+
+By default the RunPod launcher requests a **temporary Gradio `gradio.live` public link**. This setting is now applied both through `bash scripts/run_runpod.sh` and direct `python app.py`.
+
+The app protects a publicly bound service by default. If `GRADIO_AUTH_USER` and `GRADIO_AUTH_PASSWORD` are not set, it generates a strong, random username/password combination for each app launch and prints them in the RunPod console. Keep the console output private; credentials change after a restart.
 
 ```bash
+cd /TRELLIS.2  # or your cloned project path
+source env/bin/activate
+
 export GRADIO_SERVER_NAME=0.0.0.0
 export GRADIO_SERVER_PORT=7860
-export GRADIO_SHARE=false
-
-# Recommended for internet-exposed endpoints:
-export GRADIO_AUTH_USER=admin
-read -rsp 'Choose a Gradio password: ' GRADIO_AUTH_PASSWORD; echo
-export GRADIO_AUTH_PASSWORD
+# Optional: omit this, the launch default is true.
+export GRADIO_SHARE=true
 
 bash scripts/run_runpod.sh
 ```
 
-RunPod built-in public proxy requires HTTP port 7860 in **Expose HTTP Ports**:
+After model initialization, you should see Gradio's local address and—**only if the share tunnel connects**—a public URL:
+
+```text
+* Running on local URL:  http://0.0.0.0:7860
+* Running on public URL: https://<random>.gradio.live
+```
+
+Use the credentials printed in the RunPod console to log in. The URL is **temporary**, not a production domain, and depends on the Gradio share service plus working outbound internet connectivity. We cannot guarantee that an external URL is generated.
+
+### Set persistent credentials explicitly (recommended for repeated launches)
+
+```bash
+export GRADIO_AUTH_USER=admin
+read -rsp 'Choose a Gradio password: ' GRADIO_AUTH_PASSWORD; echo
+export GRADIO_AUTH_PASSWORD
+bash scripts/run_runpod.sh
+```
+
+Keep passwords/tokens in protected RunPod secrets for automated deployments, not in Git.
+
+### Alternative: RunPod's own HTTPS proxy (no Gradio share tunnel)
+
+If a Gradio public URL does not appear, the service may still be running correctly. RunPod's built-in HTTP proxy is **independent of** `GRADIO_SHARE`; your Pod must have HTTP port **7860** exposed in its template/Pod configuration.
+
+Open the HTTP service link in **RunPod → Pods → Connect**. Its format is:
 
 `https://<POD-ID>-7860.proxy.runpod.net`
 
-If you do not want a public endpoint, leave Gradio behind SSH and forward the port from your computer:
+Use the same Gradio credentials. Changing exposed ports may require restarting/recreating the Pod; preserve files on persistent storage.
+
+To run without the temporary Gradio share URL (e.g. proxy or SSH only):
 
 ```bash
-ssh -N -L 7860:127.0.0.1:7860 -p <EXPOSED-SSH-PORT> root@<POD-IP>
+export GRADIO_SHARE=false
+bash scripts/run_runpod.sh
 ```
 
-Then open `http://localhost:7860` on the forwarding computer.
+### Private SSH forwarding
 
-Optional temporary Gradio share link: `export GRADIO_SHARE=true`. Anyone who can access an unprotected link can consume GPU time. For long-running/public use, prefer RunPod proxy or an authenticated **named** Cloudflare Tunnel instead of an unauthenticated share link.
+If you do not expose a public HTTP port, forward the remote port locally:
+
+```bash
+ssh -N -L 7860:127.0.0.1:7860 -p <SSH-TCP-PORT> root@<POD-IP>
+```
+
+Open `http://localhost:7860` on your own computer. The same login requirements apply.
+
+### Troubleshooting if the link doesn't appear
+
+1. Look at the **full startup output**, not just the last line. Model downloads, GPU initialization or errors can prevent Gradio from starting.
+2. If `Running on local URL` is displayed but no `Running on public URL`, confirm `GRADIO_SHARE=true` and that outbound access to the Gradio share service isn't blocked. See [Gradio sharing documentation](https://www.gradio.app/guides/sharing-your-app) and [Gradio status](https://status.gradio.app/).
+3. Confirm the server is reachable inside RunPod: `curl -I http://127.0.0.1:7860`. An HTTP status such as 200, 302 or 401 shows a response; connection refused means the server isn't listening.
+4. Use the RunPod HTTP proxy if port 7860 is exposed, or SSH forwarding. **Do not assume** that `http://0.0.0.0:7860` is a browser URL on your local computer; it is a listening interface inside the Pod.
+5. If another process occupies port 7860, stop that process or change `GRADIO_SERVER_PORT` and your exposed port together.
+6. If you see a Gradio authentication form, use the username/password printed when this session started.
+
+**Security:** Anyone with a public URL can attempt to access the application. Gradio's basic authentication is useful for testing, but for shared/production environments prefer a private pod connection or an authenticated reverse proxy (e.g. Cloudflare Access). To explicitly opt out of password protection, set `TRELLIS_ALLOW_UNAUTHENTICATED=true`; this is **not recommended** on public interfaces.
 
 ## 4. Download backend compatibility (automatic)
 
