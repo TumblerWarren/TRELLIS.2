@@ -12,6 +12,7 @@ RunPod deployment of Microsoft's [TRELLIS.2 Hugging Face Space](https://huggingf
 - Provide Gradio 6.1.0 dependency, RunPod launcher, Hugging Face access preflight, and automatically generated Gradio login credentials when needed.
 - Use a separate modern Hugging Face CLI for browser/device-code sign-in without upgrading the inference environment; verify/refresh OAuth credentials at launch.
 - Ignore the deprecated RunPod `HF_HUB_ENABLE_HF_TRANSFER` setting before Hub imports; use `hf-xet` instead of requiring legacy `hf_transfer`.
+- Preflight-test an actual FlexGEMM CUDA sparse convolution before loading the 4B model, and provide a GPU-architecture-specific source rebuild script if a prebuilt wheel fails.
 - Default to 512 resolution for a conservative first run.
 
 ## Model access checklist
@@ -52,7 +53,7 @@ If you provide no credentials, both public sharing and non-loopback binding use 
 
 For detailed model access, license notes, troubleshooting, and CUDA wheel caveats see [README_RUNPOD.md](README_RUNPOD.md).
 
-**Status:** source compatibility changes + static syntax tests; end-to-end inference must be verified on the actual RTX 4090 pod. The Hugging Face Space's pinned CUDA 13 / PyTorch 2.11 third-party wheel set may not support every CUDA architecture. If an extension fails to execute on your GPU, use the upstream source-build instructions instead of assuming that Python package installation alone proves compatibility.
+**Status:** source compatibility changes + static syntax tests; GPU-specific FlexGEMM kernels are checked at runtime and full TRELLIS.2 inference/export still requires verification on your pod. The Hugging Face Space's pinned CUDA 13 / PyTorch 2.11 third-party wheel set may not support every CUDA architecture. If an extension fails to execute on your GPU, use the upstream source-build instructions instead of assuming that Python package installation alone proves compatibility.
 
 ## Credits and licensing
 

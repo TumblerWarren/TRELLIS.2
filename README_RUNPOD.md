@@ -190,7 +190,69 @@ Only enable high-performance mode if your RunPod Pod has sufficient bandwidth, C
 - **`forest.exr` invalid / 131-byte text pointer:** restart; the app fetches and validates required HDRI images from Microsoft Space. Confirm `HF_TOKEN` if download fails.
 - **`FileNotFoundError` from end_session:** missing temporary folders are now tolerated.
 - **Out of memory on 24 GB:** start at resolution `512`; avoid multiple concurrent generations and other GPU workloads.
-- **Custom CUDA wheel error:** check `nvidia-smi`, `torch.cuda.get_device_capability()`, and installed wheel architecture compatibility. GPU-specific source builds may be necessary.
+- **Custom CUDA wheel error:** run `python scripts/check_cuda_kernels.py`; if FlexGEMM fails with no kernel image, use `bash scripts/rebuild_flexgemm.sh` with a compatible CUDA developer toolkit. Additional extensions may require separate rebuilds.
+
+## 6. CUDA sparse-convolution crash: no kernel image on device
+
+If Gradio opens but **Generate** crashes with:
+
+```text
+torch.AcceleratorError: CUDA error: no kernel image is available for execution on the device
+  flex_gemm/ops/spconv/submanifold_conv3d.py
+  kernels.cuda.hashmap_build_submanifold_conv_neighbour_map
+```
+
+the failing component is a **compiled FlexGEMM CUDA extension**, not Gradio, Hugging Face access, CPU RAM or a lack of GPU memory. Our Space-derived `requirements.txt` installs a third-party prebuilt `flex_gemm` wheel, which may not include kernels for the assigned GPU. Blackwell compute capability 12.0 (including RTX PRO 6000 MIG partitions) needs an `sm_120`-capable extension.
+
+### Detect this before loading model weights
+
+After installing requirements:
+
+```bash
+cd /TRELLIS.2
+source env/bin/activate
+python scripts/check_cuda_kernels.py
+```
+
+This now also runs as part of `python scripts/check_runpod.py` and `bash scripts/run_runpod.sh`, **after the model-access checks**. It executes a small real `flex_gemm.ops.spconv.sparse_submanifold_conv3d` on the GPU and synchronizes it. Unlike `torch.cuda.is_available()`, this can identify missing GPU-specific kernels. Preflight cannot guarantee every other CUDA extension will work.
+
+### Repair: rebuild FlexGEMM for the GPU you actually have
+
+The explicit repair script (not automatically executed, because compiling costs compute and requires a CUDA development toolkit):
+
+```bash
+cd /TRELLIS.2
+source env/bin/activate
+
+# Check that CUDA nvcc is installed and visible:
+nvcc --version
+
+bash scripts/rebuild_flexgemm.sh
+
+# Check the extension without downloading models:
+python scripts/check_cuda_kernels.py
+
+# Then resume:
+bash scripts/run_runpod.sh
+```
+
+The script detects your GPU's compute capability, selects `TORCH_CUDA_ARCH_LIST` accordingly, verifies the installed CUDA compiler, clones upstream FlexGEMM **v1.1.0** (which includes a CUDA 13 build fix), and compiles it against the **existing PyTorch** using `--no-build-isolation --no-deps`. It does not upgrade PyTorch or alter model weights. This source version may still require adjustments for some GPU/driver combinations; a successful build is not a guarantee until the smoke test passes.
+
+**Use a CUDA *devel* image**, not a runtime-only image, to get `nvcc` and C++ build tools. For Blackwell SM 12.0, CUDA toolkit 12.8 or newer is required. A CUDA compiler major version matching PyTorch is strongly recommended. If `nvcc` is missing, change to a compatible RunPod development image rather than installing random CUDA packages into the current environment.
+
+**Install order matters:** `requirements-runpod.txt` contains a URL to a prebuilt FlexGEMM wheel. Reinstalling those requirements **after** rebuilding may overwrite your source-built extension. Install requirements first, then repair.
+
+If rebuilding fails, inspect the compiler output. If the smoke test succeeds but full inference later crashes in another CUDA extension (CuMesh, o_voxel, FlashAttention), that is a separate compatibility problem and must be diagnosed individually.
+
+Do **not** simply set `SPARSE_CONV_BACKEND=spconv` as an automatic workaround: alternative backends can change sparse tensor representations and may not produce correct results with the current pipeline.
+
+To bypass the runtime test **only if you already verified the binary elsewhere**:
+
+```bash
+export TRELLIS_SKIP_KERNEL_PREFLIGHT=1
+```
+
+This does not fix an incompatible extension.
 
 ## Verification scope
 

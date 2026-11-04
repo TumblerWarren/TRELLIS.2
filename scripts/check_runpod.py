@@ -46,7 +46,33 @@ def main():
             failed = True
     if failed:
         raise SystemExit("Model preflight failed. Correct access before launching the app.")
-    print("Preflight complete. This does not test GPU generation or custom CUDA kernels.")
+    # A successful torch CUDA check does not prove third-party CUDA extensions
+    # include kernels for the assigned GPU (e.g. Blackwell SM 12.0).
+    # Test the exact FlexGEMM operation before expensive model initialization.
+    if os.getenv("SPARSE_CONV_BACKEND", "flex_gemm") == "flex_gemm":
+        if os.getenv("TRELLIS_SKIP_KERNEL_PREFLIGHT", "").lower() in {"1", "true", "yes"}:
+            print("WARNING: Skipping FlexGEMM runtime kernel test by explicit override.")
+        else:
+            import subprocess
+            from pathlib import Path
+            kernel_check = Path(__file__).with_name("check_cuda_kernels.py")
+            print("Checking FlexGEMM CUDA kernel compatibility...", flush=True)
+            try:
+                subprocess.run([sys.executable, "-u", str(kernel_check)], check=True, timeout=240)
+            except subprocess.TimeoutExpired as exc:
+                raise SystemExit(
+                    "FlexGEMM CUDA smoke test timed out. Inspect the CUDA toolchain or run "
+                    "python scripts/check_cuda_kernels.py manually."
+                ) from exc
+            except subprocess.CalledProcessError as exc:
+                raise SystemExit(
+                    "FlexGEMM failed on this GPU. Run bash scripts/rebuild_flexgemm.sh "
+                    "using a compatible CUDA developer toolkit, then retry. "
+                    "See README_RUNPOD.md."
+                ) from exc
+    else:
+        print("WARNING: Nondefault SPARSE_CONV_BACKEND selected; FlexGEMM smoke test not run.")
+    print("Preflight complete. This does not verify full TRELLIS.2 generation or GLB export.")
 
 if __name__ == "__main__":
     main()
