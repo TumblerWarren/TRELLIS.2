@@ -12,7 +12,7 @@ RunPod deployment of Microsoft's [TRELLIS.2 Hugging Face Space](https://huggingf
 - Provide Gradio 6.1.0 dependency, RunPod launcher, Hugging Face access preflight, and automatically generated Gradio login credentials when needed.
 - Use a separate modern Hugging Face CLI for browser/device-code sign-in without upgrading the inference environment; verify/refresh OAuth credentials at launch.
 - Ignore the deprecated RunPod `HF_HUB_ENABLE_HF_TRANSFER` setting before Hub imports; use `hf-xet` instead of requiring legacy `hf_transfer`.
-- Preflight-test both FlexGEMM sparse convolution and O-Voxel mesh hashmap CUDA kernels before loading the 4B model; provide GPU-architecture-specific rebuild scripts for incompatible wheels.
+- Preflight-test FlexGEMM sparse convolution, O-Voxel mesh hashmap and CuMesh connectivity CUDA kernels before loading the 4B model; provide architecture-specific rebuild scripts for incompatible wheels.
 - Default to 512 resolution for a conservative first run.
 
 ## Model access checklist
