@@ -25,27 +25,31 @@ def main():
     if vram < 23:
         print("WARNING: The official TRELLIS.2 model expects a 24 GB class GPU.")
 
-    rembg = os.getenv("TRELLIS_REMBG_MODEL", "ZhengPeng7/BiRefNet")
-    checks = [
-        ("microsoft/TRELLIS.2-4B", "pipeline.json",
-         "Main model is public; check network access."),
-        ("facebook/dinov3-vitl16-pretrain-lvd1689m", "config.json",
-         "Accept Meta's DINOv3 terms, then run bash scripts/login_huggingface.sh (browser sign-in) or use an approved HF_TOKEN secret."),
-        (rembg, "config.json",
-         "Check background-model access and license; the default ZhengPeng7/BiRefNet is public."),
-    ]
-    failed = False
-    for repo, filename, hint in checks:
-        try:
-            hf_hub_download(repo_id=repo, filename=filename)
-            print(f"OK: {repo}/{filename}")
-        except Exception as exc:
-            print(f"FAILED: {repo}/{filename}: {type(exc).__name__}: {exc}")
-            print(f"  Troubleshooting: {explain_hub_error(exc)}")
-            print(f"  Model-specific hint: {hint}")
-            failed = True
-    if failed:
-        raise SystemExit("Model preflight failed. Correct access before launching the app.")
+    if os.getenv("TRELLIS_SKIP_MODEL_PREFLIGHT", "false").strip().lower() in {"1", "true", "yes", "on"}:
+        print("[TRELLIS.2] Skipping remote model access checks for lazy Docker startup.")
+        print("[TRELLIS.2] Gated DINOv3 access will be checked when the model is first needed.")
+    else:
+        rembg = os.getenv("TRELLIS_REMBG_MODEL", "ZhengPeng7/BiRefNet")
+        checks = [
+            ("microsoft/TRELLIS.2-4B", "pipeline.json",
+             "Main model is public; check network access."),
+            ("facebook/dinov3-vitl16-pretrain-lvd1689m", "config.json",
+             "Accept Meta's DINOv3 terms, then run bash scripts/login_huggingface.sh (browser sign-in) or use an approved HF_TOKEN secret."),
+            (rembg, "config.json",
+             "Check background-model access and license; the default ZhengPeng7/BiRefNet is public."),
+        ]
+        failed = False
+        for repo, filename, hint in checks:
+            try:
+                hf_hub_download(repo_id=repo, filename=filename)
+                print(f"OK: {repo}/{filename}")
+            except Exception as exc:
+                print(f"FAILED: {repo}/{filename}: {type(exc).__name__}: {exc}")
+                print(f"  Troubleshooting: {explain_hub_error(exc)}")
+                print(f"  Model-specific hint: {hint}")
+                failed = True
+        if failed:
+            raise SystemExit("Model preflight failed. Correct access before launching the app.")
     # A successful torch CUDA check does not prove third-party CUDA extensions
     # include kernels for the assigned GPU (e.g. Blackwell SM 12.0).
     # Test the exact FlexGEMM operation before expensive model initialization.
