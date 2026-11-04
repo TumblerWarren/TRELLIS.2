@@ -21,6 +21,7 @@ from PIL import Image
 import base64
 import io
 from pathlib import Path
+import threading
 from huggingface_hub import hf_hub_download
 from trellis2.modules.sparse import SparseTensor
 from trellis2.pipelines import Trellis2ImageTo3DPipeline
@@ -33,7 +34,13 @@ import o_voxel
 
 
 MAX_SEED = np.iinfo(np.int32).max
-TMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tmp')
+TMP_DIR = os.getenv("TRELLIS_TMP_DIR", str(APP_DIR / "tmp"))
+# Model weights never belong in the Docker image. When TRELLIS_LAZY_LOAD=true,
+# a locked singleton downloads and loads them on the first inference request.
+_model_init_lock = threading.Lock()
+pipeline = None
+local_rmbg = None
+envmap = None
 MODES = [
     {"name": "Normal", "icon": "assets/app/normal.png", "render_key": "normal"},
     {"name": "Clay render", "icon": "assets/app/clay.png", "render_key": "clay"},
@@ -348,8 +355,52 @@ def ensure_hdri_assets() -> None:
             )
 
 
+def ensure_models_loaded() -> None:
+    """Download/cache and initialize the 4B model on first use, once per process.
+
+    The Hugging Face cache is controlled by HF_HOME, which the Docker image
+    maps to persistent /workspace storage. Failures do not poison the loader:
+    a later authorized request can retry after fixing model access.
+    """
+    global pipeline, local_rmbg, envmap
+    if pipeline is not None:
+        return
+    with _model_init_lock:
+        if pipeline is not None:
+            return
+        print("[TRELLIS.2] Loading model on demand. First use may download weights to HF_HOME.", flush=True)
+        ensure_hdri_assets()
+        new_pipeline = Trellis2ImageTo3DPipeline.from_pretrained(
+            "microsoft/TRELLIS.2-4B",
+            rembg_model_name=os.getenv("TRELLIS_REMBG_MODEL", "ZhengPeng7/BiRefNet"),
+        )
+        new_rembg = new_pipeline.rembg_model
+        new_rembg.cpu()
+        new_pipeline.rembg_model = None
+        new_pipeline.low_vram = False
+        new_pipeline.cuda()
+        new_envmap = {
+            name: EnvMap(torch.tensor(
+                cv2.cvtColor(
+                    cv2.imread(f"assets/hdri/{name}.exr", cv2.IMREAD_UNCHANGED),
+                    cv2.COLOR_BGR2RGB,
+                ),
+                dtype=torch.float32,
+                device="cuda",
+            ))
+            for name in ("forest", "sunset", "courtyard")
+        }
+        # Publish only fully initialized objects so competing requests cannot
+        # observe a half-loaded pipeline.
+        local_rmbg = new_rembg
+        envmap = new_envmap
+        pipeline = new_pipeline
+        print("[TRELLIS.2] Model loaded and ready.", flush=True)
+
+
 def remove_background(input: Image.Image) -> Image.Image:
     """Run locally on the selected BiRefNet model, without remote ZeroGPU calls."""
+    ensure_models_loaded()
     return local_rmbg(input.convert("RGB"))
 
 
@@ -434,6 +485,7 @@ def image_to_3d(
     progress=gr.Progress(track_tqdm=True),
 ) -> str:
     # --- Sampling ---
+    ensure_models_loaded()
     outputs, latents = pipeline.run(
         image,
         seed=seed,
@@ -555,6 +607,7 @@ def extract_glb(
     """
     user_dir = os.path.join(TMP_DIR, str(req.session_hash))
     shape_slat, tex_slat, res = unpack_state(state)
+    ensure_models_loaded()
     mesh = pipeline.decode_latent(shape_slat, tex_slat, res)[0]
     mesh.simplify(16777216)
     glb = o_voxel.postprocess.to_glb(
@@ -698,33 +751,11 @@ if __name__ == "__main__":
         icon = Image.open(MODES[i]['icon'])
         MODES[i]['icon_base64'] = image_to_base64(icon)
 
-    ensure_hdri_assets()
-    pipeline = Trellis2ImageTo3DPipeline.from_pretrained(
-        "microsoft/TRELLIS.2-4B",
-        rembg_model_name=os.getenv("TRELLIS_REMBG_MODEL", "ZhengPeng7/BiRefNet"),
-    )
-    # Keep the background-removal model on CPU, reserving GPU VRAM for TRELLIS.2.
-    local_rmbg = pipeline.rembg_model
-    local_rmbg.cpu()
-    pipeline.rembg_model = None
-    pipeline.low_vram = False
-    pipeline.cuda()
-    
-    envmap = {
-        'forest': EnvMap(torch.tensor(
-            cv2.cvtColor(cv2.imread('assets/hdri/forest.exr', cv2.IMREAD_UNCHANGED), cv2.COLOR_BGR2RGB),
-            dtype=torch.float32, device='cuda'
-        )),
-        'sunset': EnvMap(torch.tensor(
-            cv2.cvtColor(cv2.imread('assets/hdri/sunset.exr', cv2.IMREAD_UNCHANGED), cv2.COLOR_BGR2RGB),
-            dtype=torch.float32, device='cuda'
-        )),
-        'courtyard': EnvMap(torch.tensor(
-            cv2.cvtColor(cv2.imread('assets/hdri/courtyard.exr', cv2.IMREAD_UNCHANGED), cv2.COLOR_BGR2RGB),
-            dtype=torch.float32, device='cuda'
-        )),
-    }
-    
+    if os.getenv("TRELLIS_LAZY_LOAD", "false").strip().lower() in {"1", "true", "yes", "on"}:
+        print("[TRELLIS.2] Lazy loading enabled: Gradio will start without downloading model weights.", flush=True)
+    else:
+        ensure_models_loaded()
+
     # Temporary public links are enabled for self-hosted quickstarts. Protect
     # the GPU with Gradio credentials, generated if the operator omitted them.
     # A public URL is only available if Gradio's outbound share tunnel connects.
