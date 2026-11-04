@@ -33,5 +33,7 @@ export GRADIO_SERVER_PORT="${GRADIO_SERVER_PORT:-7860}"
 export GRADIO_SHARE="${GRADIO_SHARE:-true}"
 echo "[TRELLIS.2] GRADIO_SHARE=${GRADIO_SHARE}; temporary public URLs require working outbound connectivity." >&2
 echo "[TRELLIS.2] RunPod alternative: expose HTTP port ${GRADIO_SERVER_PORT} in your Pod template/Connect settings." >&2
+# The preflight executes a tiny FlexGEMM convolution first, catching
+# cudaErrorNoKernelImageForDevice *before* loading the 4B model and starting Gradio.
 python scripts/check_runpod.py
 exec python app.py
