@@ -72,6 +72,27 @@ def main():
                 ) from exc
     else:
         print("WARNING: Nondefault SPARSE_CONV_BACKEND selected; FlexGEMM smoke test not run.")
+    # O-Voxel contains separate CUDA extension kernels needed for mesh decoding.
+    # A working FlexGEMM test does NOT imply O-Voxel kernels support this GPU.
+    if os.getenv("TRELLIS_SKIP_KERNEL_PREFLIGHT", "").lower() not in {"1", "true", "yes"}:
+        import subprocess
+        from pathlib import Path
+        o_voxel_check = Path(__file__).with_name("check_o_voxel_kernels.py")
+        print("Checking O-Voxel mesh-decoding CUDA kernels...", flush=True)
+        try:
+            subprocess.run([sys.executable, "-u", str(o_voxel_check)], check=True, timeout=240)
+        except subprocess.TimeoutExpired as exc:
+            raise SystemExit(
+                "O-Voxel kernel check timed out; run python scripts/check_o_voxel_kernels.py."
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            raise SystemExit(
+                "O-Voxel CUDA kernels failed on the assigned GPU. "
+                "Run bash scripts/rebuild_o_voxel.sh with a matching CUDA developer toolkit, "
+                "then retry. See README_RUNPOD.md."
+            ) from exc
+    else:
+        print("WARNING: Skipping O-Voxel kernel test by explicit TRELLIS_SKIP_KERNEL_PREFLIGHT override.")
     print("Preflight complete. This does not verify full TRELLIS.2 generation or GLB export.")
 
 if __name__ == "__main__":

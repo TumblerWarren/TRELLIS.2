@@ -190,7 +190,7 @@ Only enable high-performance mode if your RunPod Pod has sufficient bandwidth, C
 - **`forest.exr` invalid / 131-byte text pointer:** restart; the app fetches and validates required HDRI images from Microsoft Space. Confirm `HF_TOKEN` if download fails.
 - **`FileNotFoundError` from end_session:** missing temporary folders are now tolerated.
 - **Out of memory on 24 GB:** start at resolution `512`; avoid multiple concurrent generations and other GPU workloads.
-- **Custom CUDA wheel error:** run `python scripts/check_cuda_kernels.py`; if FlexGEMM fails with no kernel image, use `bash scripts/rebuild_flexgemm.sh` with a compatible CUDA developer toolkit. Additional extensions may require separate rebuilds.
+- **Custom CUDA wheel error:** run `python scripts/check_cuda_kernels.py` for FlexGEMM and `python scripts/check_o_voxel_kernels.py` for mesh extraction. The matching repair scripts are `scripts/rebuild_flexgemm.sh` and `scripts/rebuild_o_voxel.sh`. Rebuild only the component that fails.
 
 ## 6. CUDA sparse-convolution crash: no kernel image on device
 
@@ -253,6 +253,77 @@ export TRELLIS_SKIP_KERNEL_PREFLIGHT=1
 ```
 
 This does not fix an incompatible extension.
+
+## 7. O-Voxel CUDA crash after FlexGEMM passes
+
+If `scripts/check_cuda_kernels.py` passes but generating a 3D model later crashes near
+`o_voxel/convert/flexible_dual_grid.py` / `decode_shape_slat` with
+`CUDA error: no kernel image is available for execution on the device`,
+the next likely issue is an incompatible **O-Voxel prebuilt CUDA extension**.
+
+The repository's `requirements.txt` currently installs several third-party binary
+wheels from a package set labeled `rtxpro6000`. They may not include CUDA kernels
+for **RTX 4090 SM 8.9**, even though GPU memory and PyTorch work.
+
+### Isolate the failure without downloading model weights
+
+```bash
+cd /TRELLIS.2
+source env/bin/activate
+
+python scripts/check_cuda_kernels.py
+python scripts/check_o_voxel_kernels.py
+```
+
+The O-Voxel test executes its native CUDA hashmap insert/lookup functions with
+small synthetic input, which are used during flexible dual grid mesh extraction.
+It now runs automatically during `python scripts/check_runpod.py`, after the
+FlexGEMM check. A passing result does not guarantee every O-Voxel, CuMesh or
+other CUDA kernel is compatible.
+
+### Rebuild O-Voxel for the actual GPU
+
+Use a matching **CUDA developer toolkit**; for example this Pod previously had
+PyTorch `2.11.0+cu130` and needed `nvcc` release `13.0`:
+
+```bash
+cd /TRELLIS.2
+source env/bin/activate
+
+export CUDA_HOME=/usr/local/cuda-13.0
+export PATH="$CUDA_HOME/bin:$PATH"
+nvcc --version
+
+bash scripts/rebuild_o_voxel.sh
+python scripts/check_o_voxel_kernels.py
+
+# If both checks pass, launch and test Generate:
+bash scripts/run_runpod.sh
+```
+
+The build script automatically detects the native GPU compute capability
+(e.g., SM `8.9` for RTX 4090), validates the CUDA toolkit against existing
+PyTorch, then sparsely fetches Microsoft's official TRELLIS.2 `o-voxel`
+source at pinned commit `75fbf018`, including its Eigen Git submodule. It
+reinstalls **only O-Voxel**, with `--no-deps --no-build-isolation`, preserving
+your source-built FlexGEMM, PyTorch and downloaded models.
+
+**Do not** rerun `pip install -r requirements-runpod.txt` after these
+rebuilds: it contains precompiled `flex-gemm` and `o-voxel` wheels which
+could overwrite your working GPU-specific builds.
+
+The previous traceback was at an ordinary tensor addition, which might only
+have reported an earlier asynchronous CUDA failure. To locate the exact
+failing kernel, stop the app and rerun it with:
+
+```bash
+export CUDA_LAUNCH_BLOCKING=1
+bash scripts/run_runpod.sh 2>&1 | tee /tmp/trellis-cuda-debug.log
+```
+
+**Only use blocking for diagnosis** because it slows CUDA execution. Remove
+`CUDA_LAUNCH_BLOCKING` afterward. If O-Voxel passes but full generation still
+fails, capture the new traceback—do not blindly rebuild unrelated packages.
 
 ## Verification scope
 
