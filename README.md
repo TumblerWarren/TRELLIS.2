@@ -29,6 +29,20 @@ The main [Microsoft TRELLIS.2-4B](https://huggingface.co/microsoft/TRELLIS.2-4B)
 
 For full instructions, see [RunPod model permissions](README_RUNPOD.md#1-hugging-face-permissions-do-this-before-starting-the-app).
 
+## Docker image (no bundled model weights)
+
+You can package this fork in a CUDA 13.0 **Docker image without model files**.
+The Dockerfile builds GPU-native dependencies for RTX 4090 (SM 8.9).
+Gradio starts first; the weights are downloaded when image-to-3D is first
+requested and cached on persistent storage under `/workspace/hf-cache`.
+
+Build: `docker build --build-arg CUDA_ARCHS=8.9 -t trellis2-runpod:sm89 .`
+
+See [README_DOCKER.md](README_DOCKER.md) for persistent-volume setup,
+Hugging Face browser login, and RunPod custom-image usage. This Docker
+configuration has source-level CI checks but **has not yet been built and
+validated end-to-end on an RTX 4090**.
+
 ## Quick start on RunPod
 
 Python **3.12**, Linux, a working NVIDIA CUDA environment, and an internet-enabled 24 GB GPU are needed.
