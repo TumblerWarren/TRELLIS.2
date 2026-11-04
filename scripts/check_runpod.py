@@ -93,6 +93,27 @@ def main():
             ) from exc
     else:
         print("WARNING: Skipping O-Voxel kernel test by explicit TRELLIS_SKIP_KERNEL_PREFLIGHT override.")
+    # Native CuMesh connectivity kernels have independent GPU architecture
+    # compatibility. A working FlexGEMM/O-Voxel test does not test CuMesh.
+    if os.getenv("TRELLIS_SKIP_KERNEL_PREFLIGHT", "").lower() not in {"1", "true", "yes"}:
+        import subprocess
+        from pathlib import Path
+        cumesh_check = Path(__file__).with_name("check_cumesh_kernels.py")
+        print("Checking CuMesh mesh-connectivity CUDA kernels...", flush=True)
+        try:
+            subprocess.run([sys.executable, "-u", str(cumesh_check)], check=True, timeout=240)
+        except subprocess.TimeoutExpired as exc:
+            raise SystemExit(
+                "CuMesh CUDA test timed out; run python scripts/check_cumesh_kernels.py."
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            raise SystemExit(
+                "CuMesh get_edges CUDA kernels failed on this GPU. "
+                "Run bash scripts/rebuild_cumesh.sh with a matching CUDA toolkit, "
+                "then retry. See README_RUNPOD.md."
+            ) from exc
+    else:
+        print("WARNING: Skipping CuMesh CUDA test by TRELLIS_SKIP_KERNEL_PREFLIGHT override.")
     print("Preflight complete. This does not verify full TRELLIS.2 generation or GLB export.")
 
 if __name__ == "__main__":

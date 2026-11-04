@@ -190,7 +190,7 @@ Only enable high-performance mode if your RunPod Pod has sufficient bandwidth, C
 - **`forest.exr` invalid / 131-byte text pointer:** restart; the app fetches and validates required HDRI images from Microsoft Space. Confirm `HF_TOKEN` if download fails.
 - **`FileNotFoundError` from end_session:** missing temporary folders are now tolerated.
 - **Out of memory on 24 GB:** start at resolution `512`; avoid multiple concurrent generations and other GPU workloads.
-- **Custom CUDA wheel error:** run `python scripts/check_cuda_kernels.py` for FlexGEMM and `python scripts/check_o_voxel_kernels.py` for mesh extraction. The matching repair scripts are `scripts/rebuild_flexgemm.sh` and `scripts/rebuild_o_voxel.sh`. Rebuild only the component that fails.
+- **Custom CUDA wheel error:** preflight now runs GPU checks for FlexGEMM, O-Voxel and CuMesh. Run `python scripts/check_cuda_kernels.py`, `python scripts/check_o_voxel_kernels.py`, and `python scripts/check_cumesh_kernels.py` individually. Repair only the failing extension with its matching `scripts/rebuild_*.sh` script.
 
 ## 6. CUDA sparse-convolution crash: no kernel image on device
 
@@ -324,6 +324,69 @@ bash scripts/run_runpod.sh 2>&1 | tee /tmp/trellis-cuda-debug.log
 **Only use blocking for diagnosis** because it slows CUDA execution. Remove
 `CUDA_LAUNCH_BLOCKING` afterward. If O-Voxel passes but full generation still
 fails, capture the new traceback—do not blindly rebuild unrelated packages.
+
+## 8. CuMesh `get_edges` CUDA crash after mesh decoding
+
+After rebuilding FlexGEMM and O-Voxel on a RunPod RTX 4090 (SM 8.9),
+mesh decoding can progress further and fail at:
+
+```text
+trellis2/representations/mesh/base.py -> fill_holes()
+cumesh/cumesh.py -> get_edges()
+src/connectivity.cu:128
+CUDA error 209: no kernel image is available for execution on the device
+```
+
+This indicates the current **CuMesh** CUDA wheel likely lacks a binary compatible
+with the GPU. The third-party binaries in `requirements.txt` were packaged in
+an `rtxpro6000` set, which is not proof of SM 8.9 support. Gradio is serving
+requests; it is the native mesh operation that fails.
+
+**Test the failing operation directly, without loading the TRELLIS.2 models:**
+
+```bash
+cd /TRELLIS.2
+source env/bin/activate
+python scripts/check_cumesh_kernels.py
+```
+
+The test constructs a small two-triangle mesh and calls CuMesh's exact native
+`get_edges()` operation, then synchronizes CUDA. This test is also executed
+during `python scripts/check_runpod.py` after FlexGEMM and O-Voxel checks.
+
+**Rebuild only CuMesh using its official source:**
+
+```bash
+cd /TRELLIS.2
+source env/bin/activate
+
+# Set the compiler matching your installed CUDA 13.0 PyTorch:
+export CUDA_HOME=/usr/local/cuda-13.0
+export PATH="$CUDA_HOME/bin:$PATH"
+nvcc --version
+
+bash scripts/rebuild_cumesh.sh
+python scripts/check_cumesh_kernels.py
+
+# Confirm all three known native CUDA components:
+python scripts/check_runpod.py
+bash scripts/run_runpod.sh
+```
+
+The repair script checks the actual GPU capability (e.g., SM `8.9` for RTX
+4090), validates toolkit versus PyTorch CUDA major version, fetches pinned
+[CuMesh](https://github.com/JeffreyXiang/CuMesh) source and its `cubvh`
+submodule, and compiles against the **existing PyTorch**. It uses
+`--no-deps --no-build-isolation` so your repaired FlexGEMM and O-Voxel should
+remain intact.
+
+**Be aware:** a passing CuMesh `get_edges()` test does not validate every
+CuMesh operation, UV unwrapping, the nvdiffrast/nvdiffrec extensions, or full
+GLB export. New failures require their own tracebacks and tests. To pinpoint
+asynchronous CUDA exceptions, restart the app with
+`CUDA_LAUNCH_BLOCKING=1` temporarily. Do not reinstall
+`requirements-runpod.txt` after rebuilding native extensions, because it
+includes the original incompatible prebuilt wheels.
 
 ## Verification scope
 
